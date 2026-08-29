@@ -1,74 +1,49 @@
-import os
-import shutil
+import json
 from typing import List, Dict, Any
 
-class Processor:
-    """Handles task processing and resource cleanup for automation."""
+def validate_record(record: Dict[str, Any]) -> bool:
+    """Check if the input record meets all validation criteria."""
+    if not isinstance(record, dict):
+        return False
+    required = ['id', 'name', 'value']
+    for field in required:
+        if field not in record:
+            return False
+    if not isinstance(record['id'], int) or record['id'] <= 0:
+        return False
+    if not isinstance(record['name'], str) or len(record['name'].strip()) == 0:
+        return False
+    if not isinstance(record['value'], (int, float)) or record['value'] < 0:
+        return False
+    return True
 
-    def __init__(self, temp_dir: str = "/tmp/automation"):
-        self.temp_dir = temp_dir
-        self.tasks: List[Dict[str, Any]] = []
-        self.processed: List[Dict[str, Any]] = []
-        os.makedirs(self.temp_dir, exist_ok=True)
-
-    def add_task(self, task: Dict[str, Any]) -> None:
-        """Add a new task to the queue."""
-        if 'id' not in task:
-            task['id'] = len(self.tasks) + 1
-        self.tasks.append(task)
-
-    def process_all(self) -> List[Dict[str, Any]]:
-        """Process all pending tasks."""
-        for task in self.tasks[:]:
-            result = self._process_task(task)
-            self.processed.append(result)
-            self.tasks.remove(task)
-        return self.processed
-
-    def _process_task(self, task: Dict[str, Any]) -> Dict[str, Any]:
-        """Internal method to handle individual task processing."""
-        task_type = task.get('type', 'unknown')
-        if task_type == 'file':
-            return self._handle_file_task(task)
-        elif task_type == 'data':
-            return self._handle_data_task(task)
-        else:
-            return {'id': task.get('id', 0), 'status': 'skipped', 'reason': 'unknown type'}
-
-    def _handle_file_task(self, task: Dict[str, Any]) -> Dict[str, Any]:
-        """Process a file-based task."""
-        src = task.get('source')
-        if src and os.path.exists(src):
-            dest = os.path.join(self.temp_dir, os.path.basename(src))
-            shutil.copy(src, dest)
-            return {'id': task['id'], 'status': 'processed', 'output': dest}
-        return {'id': task.get('id', 0), 'status': 'failed', 'reason': 'source not found'}
-
-    def _handle_data_task(self, task: Dict[str, Any]) -> Dict[str, Any]:
-        """Process a data manipulation task."""
-        data = task.get('data', {})
-        cleaned = {k: v for k, v in sorted(data.items()) if v is not None}
-        return {'id': task.get('id', 0), 'status': 'processed', 'result': cleaned}
-
-    def cleanup(self) -> None:
-        """Clean up temporary files and reset state."""
-        if os.path.exists(self.temp_dir):
-            for item in os.listdir(self.temp_dir):
-                path = os.path.join(self.temp_dir, item)
-                try:
-                    if os.path.isfile(path):
-                        os.remove(path)
-                    elif os.path.isdir(path):
-                        shutil.rmtree(path)
-                except Exception:
-                    pass
-        self.tasks.clear()
-        self.processed.clear()
-
-    def get_summary(self) -> Dict[str, Any]:
-        """Return summary of processed tasks."""
-        return {
-            'total_processed': len(self.processed),
-            'pending': len(self.tasks),
-            'temp_dir': self.temp_dir
+def process_inputs(inputs: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Main processing loop that includes input validation."""
+    processed_records = []
+    for index, record in enumerate(inputs):
+        if not validate_record(record):
+            print(f"Invalid input at position {index}: {record}")
+            continue
+        cleaned_name = record['name'].strip().capitalize()
+        adjusted_value = round(record['value'] * 1.05, 2)
+        processed = {
+            'id': record['id'],
+            'name': cleaned_name,
+            'value': adjusted_value,
+            'status': 'processed'
         }
+        processed_records.append(processed)
+    return processed_records
+
+if __name__ == "__main__":
+    test_data = [
+        {"id": 101, "name": "item one", "value": 50.5},
+        {"id": 0, "name": "bad id", "value": 10},
+        {"id": 102, "name": "", "value": 20},
+        {"id": 103, "name": "item two", "value": -5},
+        {"id": 104, "name": "  item three  ", "value": 75}
+    ]
+    results = process_inputs(test_data)
+    print("Successfully processed records:")
+    for rec in results:
+        print(json.dumps(rec, indent=2))
