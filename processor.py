@@ -1,49 +1,64 @@
 import json
-from typing import List, Dict, Any
+import os
+from typing import Any, Dict, Optional
 
-def validate_record(record: Dict[str, Any]) -> bool:
-    """Check if the input record meets all validation criteria."""
-    if not isinstance(record, dict):
-        return False
-    required = ['id', 'name', 'value']
-    for field in required:
-        if field not in record:
-            return False
-    if not isinstance(record['id'], int) or record['id'] <= 0:
-        return False
-    if not isinstance(record['name'], str) or len(record['name'].strip()) == 0:
-        return False
-    if not isinstance(record['value'], (int, float)) or record['value'] < 0:
-        return False
-    return True
+class ConfigLoader:
+    """Loads configuration from a JSON file merging with defaults."""
 
-def process_inputs(inputs: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """Main processing loop that includes input validation."""
-    processed_records = []
-    for index, record in enumerate(inputs):
-        if not validate_record(record):
-            print(f"Invalid input at position {index}: {record}")
-            continue
-        cleaned_name = record['name'].strip().capitalize()
-        adjusted_value = round(record['value'] * 1.05, 2)
-        processed = {
-            'id': record['id'],
-            'name': cleaned_name,
-            'value': adjusted_value,
-            'status': 'processed'
+    def __init__(self, config_file: str = "config.json", defaults: Optional[Dict[str, Any]] = None) -> None:
+        self.config_file = config_file
+        self.defaults = defaults or {
+            "timeout": 30,
+            "retries": 3,
+            "log_level": "INFO",
+            "output_dir": "output",
+            "debug": False,
+            "max_workers": 4
         }
-        processed_records.append(processed)
-    return processed_records
+        self.config: Dict[str, Any] = {}
+        self.load_config()
 
+    def load_config(self) -> None:
+        """Load config from file if exists, else use defaults."""
+        if os.path.exists(self.config_file):
+            try:
+                with open(self.config_file, "r", encoding="utf-8") as f:
+                    loaded = json.load(f)
+                self.config = self.defaults.copy()
+                self.config.update(loaded)
+            except (json.JSONDecodeError, IOError, OSError) as e:
+                print(f"Warning: Could not load {self.config_file}: {e}")
+                self.config = self.defaults.copy()
+        else:
+            self.config = self.defaults.copy()
+            self.save_config()
+
+    def save_config(self) -> None:
+        """Save the current config to file."""
+        try:
+            with open(self.config_file, "w", encoding="utf-8") as f:
+                json.dump(self.config, f, indent=2)
+        except (IOError, OSError) as e:
+            print(f"Warning: Could not save config: {e}")
+
+    def get(self, key: str, default: Optional[Any] = None) -> Any:
+        """Retrieve a value from config."""
+        return self.config.get(key, default)
+
+    def set(self, key: str, value: Any) -> None:
+        """Set a value and persist to file."""
+        self.config[key] = value
+        self.save_config()
+
+    def get_all(self) -> Dict[str, Any]:
+        """Return a copy of the full configuration."""
+        return self.config.copy()
+
+
+# Demonstration
 if __name__ == "__main__":
-    test_data = [
-        {"id": 101, "name": "item one", "value": 50.5},
-        {"id": 0, "name": "bad id", "value": 10},
-        {"id": 102, "name": "", "value": 20},
-        {"id": 103, "name": "item two", "value": -5},
-        {"id": 104, "name": "  item three  ", "value": 75}
-    ]
-    results = process_inputs(test_data)
-    print("Successfully processed records:")
-    for rec in results:
-        print(json.dumps(rec, indent=2))
+    loader = ConfigLoader("settings.json")
+    print("Loaded config:", loader.get_all())
+    print("Timeout setting:", loader.get("timeout"))
+    loader.set("debug", True)
+    print("Updated debug:", loader.get("debug"))
