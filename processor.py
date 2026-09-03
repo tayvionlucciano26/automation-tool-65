@@ -1,64 +1,53 @@
-import json
-import os
-from typing import Any, Dict, Optional
+import time
+import random
+import logging
+import urllib.request
+import urllib.error
+from typing import Callable, Any, Type, Tuple
 
-class ConfigLoader:
-    """Loads configuration from a JSON file merging with defaults."""
+logger = logging.getLogger("automation_tool.processor")
 
-    def __init__(self, config_file: str = "config.json", defaults: Optional[Dict[str, Any]] = None) -> None:
-        self.config_file = config_file
-        self.defaults = defaults or {
-            "timeout": 30,
-            "retries": 3,
-            "log_level": "INFO",
-            "output_dir": "output",
-            "debug": False,
-            "max_workers": 4
-        }
-        self.config: Dict[str, Any] = {}
-        self.load_config()
+def retry(
+    retries: int = 3,
+    delay: float = 1.0,
+    backoff: float = 2.0,
+    exceptions: Tuple[Type[BaseException], ...] = (Exception,)
+) -> Callable:
+    """
+    Decorator that retries a function call with exponential backoff and jitter.
+    """
+    def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
+            current_delay = delay
+            for attempt in range(1, retries + 1):
+                try:
+                    return func(*args, **kwargs)
+                except exceptions as err:
+                    if attempt == retries:
+                        logger.error(f"Operation failed permanently after {retries} attempts: {err}")
+                        raise err
+                    
+                    # Add a small random jitter to prevent synchronized retries
+                    jitter = random.uniform(0, 0.2 * current_delay)
+                    sleep_duration = current_delay + jitter
+                    
+                    logger.warning(
+                        f"Attempt {attempt}/{retries} failed: {err}. "
+                        f"Retrying in {sleep_duration:.2f} seconds..."
+                    )
+                    time.sleep(sleep_duration)
+                    current_delay *= backoff
+        return wrapper
+    return decorator
 
-    def load_config(self) -> None:
-        """Load config from file if exists, else use defaults."""
-        if os.path.exists(self.config_file):
-            try:
-                with open(self.config_file, "r", encoding="utf-8") as f:
-                    loaded = json.load(f)
-                self.config = self.defaults.copy()
-                self.config.update(loaded)
-            except (json.JSONDecodeError, IOError, OSError) as e:
-                print(f"Warning: Could not load {self.config_file}: {e}")
-                self.config = self.defaults.copy()
-        else:
-            self.config = self.defaults.copy()
-            self.save_config()
-
-    def save_config(self) -> None:
-        """Save the current config to file."""
-        try:
-            with open(self.config_file, "w", encoding="utf-8") as f:
-                json.dump(self.config, f, indent=2)
-        except (IOError, OSError) as e:
-            print(f"Warning: Could not save config: {e}")
-
-    def get(self, key: str, default: Optional[Any] = None) -> Any:
-        """Retrieve a value from config."""
-        return self.config.get(key, default)
-
-    def set(self, key: str, value: Any) -> None:
-        """Set a value and persist to file."""
-        self.config[key] = value
-        self.save_config()
-
-    def get_all(self) -> Dict[str, Any]:
-        """Return a copy of the full configuration."""
-        return self.config.copy()
-
-
-# Demonstration
-if __name__ == "__main__":
-    loader = ConfigLoader("settings.json")
-    print("Loaded config:", loader.get_all())
-    print("Timeout setting:", loader.get("timeout"))
-    loader.set("debug", True)
-    print("Updated debug:", loader.get("debug"))
+@retry(retries=3, delay=1.0, exceptions=(urllib.error.URLError, ConnectionError))
+def execute_network_request(url: str, timeout: int = 10) -> str:
+    """
+    Executes a network request to the given URL and returns the decoded response content.
+    """
+    req = urllib.request.Request(
+        url, 
+        headers={'User-Agent': 'AutomationTool/1.0'}
+    )
+    with urllib.request.urlopen(req, timeout=timeout) as response:
+        return response.read().decode('utf-8')
