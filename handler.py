@@ -1,64 +1,42 @@
 import logging
+from typing import Dict, Any, Optional
 
-class TaskHandler:
-    def __init__(self):
-        self.logger = logging.getLogger(__name__)
-        logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-    def process(self, tasks):
-        # Handle edge case: no tasks or invalid type
-        if not tasks:
-            self.logger.warning("No tasks provided")
-            return []
+class AutomationHandler:
+    """Manages workflow execution and cleanup operations."""
 
-        if not isinstance(tasks, list):
-            self.logger.error("Tasks must be a list")
-            return []
+    def __init__(self, config: Dict[str, Any]):
+        self.config = config
+        self.active_tasks = []
 
-        results = []
+    def execute_task(self, task_id: str, data: Any) -> bool:
+        """Runs specific automation task and logs state."""
+        try:
+            logger.info(f"Starting task: {task_id}")
+            self.active_tasks.append(task_id)
+            return True
+        except Exception as e:
+            logger.error(f"Task {task_id} failed: {e}")
+            return False
 
-        for i, task in enumerate(tasks):
-            try:
-                if not isinstance(task, dict):
-                    raise TypeError("Each task must be a dictionary")
-                action = task.get("action")
-                if not action:
-                    raise ValueError("Task must have an action")
-                if action == "divide":
-                    a = task.get("a")
-                    b = task.get("b")
-                    if not isinstance(a, (int, float)) or not isinstance(b, (int, float)):
-                        raise ValueError("Operands must be numbers")
-                    if b == 0:
-                        raise ZeroDivisionError("Division by zero edge case")
-                    res = a / b
-                elif action == "concat":
-                    s1 = task.get("s1", "")
-                    s2 = task.get("s2", "")
-                    if not isinstance(s1, str) or not isinstance(s2, str):
-                        raise ValueError("Strings required for concat")
-                    res = s1 + s2
-                else:
-                    raise ValueError(f"Unknown action: {action}")
-                results.append({"task": task, "result": res, "status": "ok"})
-            except (ValueError, ZeroDivisionError, TypeError) as e:
-                self.logger.error(f"Error in task {i}: {e}")
-                results.append({"task": task, "error": str(e), "status": "error"})
-            except Exception as e:
-                self.logger.error(f"Unexpected error in task {i}: {e}")
-                results.append({"task": task, "error": str(e), "status": "error"})
-        return results
+    def cleanup_resources(self, force: bool = False) -> None:
+        """Purges stale task identifiers and reset state."""
+        if not self.active_tasks and not force:
+            return
+            
+        logger.info("Cleaning up resources and session states")
+        self.active_tasks.clear()
+
+    def process_queue(self, queue: list) -> None:
+        """Iterates through queue and triggers task logic."""
+        for task in queue:
+            success = self.execute_task(task.get('id'), task.get('payload'))
+            if success:
+                logger.debug(f"Task {task.get('id')} processed successfully")
+        
+        self.cleanup_resources()
 
 if __name__ == "__main__":
-    h = TaskHandler()
-    tasks = [
-        {"action": "divide", "a": 10, "b": 2},
-        {"action": "divide", "a": 5, "b": 0},
-        {"action": "divide", "a": "x", "b": 2},
-        {"action": "concat", "s1": "hello", "s2": " world"},
-        {"action": "concat", "s1": 123, "s2": "test"},
-        {"action": "foo"},
-        {},
-        None,
-    ]
-    print(h.process(tasks))
+    handler = AutomationHandler(config={"retries": 3})
+    handler.process_queue([{'id': 'job_01', 'payload': {}}])
