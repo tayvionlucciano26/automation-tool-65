@@ -1,46 +1,40 @@
 import time
-from functools import lru_cache
-from typing import List, Dict, Any
+import random
+import functools
+from typing import Callable, Any
 
-class Core:
-    """Core module for automation-tool-65 with performance optimizations."""
+def retry_operation(retries: int = 3, backoff: float = 1.0):
+    """Decorator for retrying network operations with exponential backoff."""
+    def decorator(func: Callable):
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs) -> Any:
+            last_exception = None
+            current_delay = backoff
+            
+            for attempt in range(retries):
+                try:
+                    return func(*args, **kwargs)
+                except (ConnectionError, TimeoutError) as e:
+                    last_exception = e
+                    if attempt < retries - 1:
+                        time.sleep(current_delay + random.uniform(0, 0.1))
+                        current_delay *= 2
+            
+            raise last_exception
+        return wrapper
+    return decorator
 
-    def __init__(self) -> None:
-        self.cache: Dict[str, Any] = {}
-        self.stats: Dict[str, int] = {"processed": 0, "cache_hits": 0}
+@retry_operation(retries=3, backoff=2.0)
+def fetch_data(url: str):
+    """Example network operation protected by retry logic."""
+    # Simulating a volatile network request
+    if random.random() < 0.7:
+        raise ConnectionError(f"Failed to connect to {url}")
+    return {"status": "success", "data": "sample response"}
 
-    @lru_cache(maxsize=256)
-    def _optimized_computation(self, data: str) -> int:
-        """Cached computation for repeated calls to boost performance."""
-        # Simulate complex calculation without actual delay
-        result = sum(ord(c) for c in data) * len(data)
-        return result
-
-    def process_batch(self, items: List[str]) -> Dict[str, Any]:
-        """Process items using caching and efficient iteration."""
-        results: Dict[str, Any] = {}
-        for item in items:
-            if item in self.cache:
-                self.stats["cache_hits"] += 1
-                results[item] = self.cache[item]
-                continue
-            # Use optimized computation
-            comp_value = self._optimized_computation(item)
-            processed = {
-                "value": comp_value,
-                "length": len(item),
-                "timestamp": time.time()
-            }
-            self.cache[item] = processed
-            results[item] = processed
-            self.stats["processed"] += 1
-        return results
-
-    def get_performance_metrics(self) -> Dict[str, Any]:
-        """Retrieve current performance metrics."""
-        return {
-            "processed_items": self.stats["processed"],
-            "cache_hits": self.stats["cache_hits"],
-            "cache_size": len(self.cache),
-            "cache_info": self._optimized_computation.cache_info()
-        }
+if __name__ == "__main__":
+    try:
+        result = fetch_data("https://api.example.com")
+        print(f"Operation successful: {result}")
+    except Exception as e:
+        print(f"Operation failed after retries: {e}")
