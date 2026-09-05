@@ -1,49 +1,30 @@
-import os
 import re
-from urllib.parse import urlparse
+from typing import Any, Dict
 
-# Regular expression for simple email validation
-EMAIL_REGEX = re.compile(r"^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$")
-
-
-def is_valid_url(url: str) -> bool:
-    """Check if a given string is a properly formatted URL."""
-    if not url:
+def validate_input_data(data: Dict[str, Any]) -> bool:
+    """Validates input structure and value constraints."""
+    required_keys = {'task_id', 'payload', 'priority'}
+    
+    # Check for required dictionary keys
+    if not all(key in data for key in required_keys):
         return False
-    try:
-        result = urlparse(url)
-        return all([result.scheme, result.netloc])
-    except ValueError:
+    
+    # Validate task_id format
+    if not isinstance(data['task_id'], str) or not re.match(r'^task-\d+$', data['task_id']):
         return False
-
-
-def is_valid_email(email: str) -> bool:
-    """Validate email format using a standard regular expression."""
-    if not email:
+    
+    # Validate priority bounds
+    if not isinstance(data['priority'], int) or not (0 <= data['priority'] <= 10):
         return False
-    return bool(EMAIL_REGEX.match(email))
-
-
-def is_safe_path(path: str, base_directory: str) -> bool:
-    """Ensure the path is within the allowed base directory boundary."""
-    if not path or not base_directory:
+    
+    # Validate payload is not empty
+    if not data['payload']:
         return False
-    resolved_base = os.path.abspath(base_directory)
-    resolved_path = os.path.abspath(path)
-    return resolved_path.startswith(resolved_base)
+        
+    return True
 
-
-def validate_config_structure(config: dict, required_fields: list) -> None:
-    """Validate that all required fields exist in the configuration dictionary.
-
-    Raises:
-        ValueError: If a required key is missing or the config is invalid.
-    """
-    if not isinstance(config, dict):
-        raise ValueError("Configuration must be a dictionary")
-
-    missing_fields = [field for field in required_fields if field not in config]
-    if missing_fields:
-        raise ValueError(
-            f"Missing required configuration fields: {', '.join(missing_fields)}"
-        )
+def sanitize_input(data: Dict[str, Any]) -> Dict[str, Any]:
+    """Removes potential malicious or malformed characters."""
+    if isinstance(data.get('payload'), str):
+        data['payload'] = data['payload'].strip()[:1024]
+    return data
